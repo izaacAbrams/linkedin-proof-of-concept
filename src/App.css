@@ -31,9 +31,6 @@
   padding: 0 20px;
   border-radius: 6px;
   margin-bottom: 20px;
-  &:hover {
-    background-color: #131313;
-  }
 }
 
 .profile-pic {
@@ -53,9 +50,12 @@
   margin: 20px;
 }
 
-.post-method {
+.select-item {
   background-color: #101010;
   padding: 20px;
+}
+
+.post-method {
   border-radius: 6px 0 0 6px;
   &:last-of-type {
     border-radius: 0 6px 6px 0;
@@ -65,4 +65,8 @@
 .method-active {
   background-color: #171717;
   border: 1px solid #646cff;
+}
+
+.org-item {
+  margin: 20px 0;
 }

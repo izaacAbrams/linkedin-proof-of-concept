@@ -2,6 +2,16 @@
 
 In this proof of concept we are utilizing LinkedIn's API to authenticate a user through OAuth, get a list of the user's organizations that they have admin roles for, then allow to upload an image post on either the profile or organization page.
 
+## Setup
+
+Setup needed:
+
+- Create an organization (or login to linkedin account with admin level to an organization)
+- Create a [new app](https://www.linkedin.com/developers/apps/new) from dev dashboard
+- Under 'products' request access to the 'Advertising API'
+- Copy .example.env to .env
+- Copy client id and secret to env vars
+
 ## Steps
   
   1. Kick it off with requesting an authorization token

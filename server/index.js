@@ -14,6 +14,7 @@ require("dotenv").config();
 app.use(cors());
 
 const API_URL = "https://api.linkedin.com/v2";
+const AUTH_URL = "https://www.linkedin.com/oauth/v2/accessToken";
 
 app.get("/api/auth", async (req, res) => {
   const body = {
@@ -24,13 +25,12 @@ app.get("/api/auth", async (req, res) => {
     redirect_uri: process.env.REDIRECT_URI,
   };
 
-  const authUrl = "https://www.linkedin.com/oauth/v2/accessToken";
   // In our implementation there should be two flows for posting to page/to profile to avoid having to get lists of orgs
   const orgUrl =
-    "https://api.linkedin.com/rest/organizationAcls?q=roleAssignee&role=ADMINISTRATOR";
+    "https://api.linkedin.com/v2/organizationalEntityAcls?q=roleAssignee&projection=(elements*(organizationalTarget~(id,localizedName,logoV2(original~:playableStreams))))";
 
   try {
-    const tokenRes = await fetch(authUrl, {
+    const tokenRes = await fetch(AUTH_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -67,23 +67,20 @@ app.get("/api/auth", async (req, res) => {
     });
 
     if (!orgsReq.ok) throw new Error("Unable to get organizations");
-
     const orgRes = await orgsReq.json();
 
-    const allOrgs = orgRes.elements.map(org => org.organization.split('urn:li:organization:')[1])
-
-    const batchGetOrgs = await fetch(`https://api.linkedin.com/rest/organizations?ids=List(${allOrgs.join(',')})`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Linkedin-Version": "202404",
-        "X-Restli-Protocol-Version": "2.0.0",
-      },
-    })
-
-    if (!batchGetOrgs.ok) throw new Error('Could not retrieve organizations info')
-    
-    const batchGetOrgsRes = await batchGetOrgs.json()
+    const orgFormatted = orgRes.elements.map((org) => {
+      const orgTarget = org["organizationalTarget~"];
+      const logo = orgTarget?.logoV2;
+      let imagePath = "";
+      if (logo)
+        imagePath = logo["original~"].elements[0].identifiers[0].identifier;
+      return {
+        id: orgTarget.id,
+        name: orgTarget.localizedName,
+        image: imagePath,
+      };
+    });
 
     const resData = {
       profile_data: {
@@ -92,11 +89,36 @@ app.get("/api/auth", async (req, res) => {
         image: profilePicture ?? undefined,
       },
       token: tokenData,
-      organizations: batchGetOrgsRes,
+      organizations: orgFormatted,
     };
     res.json(resData);
   } catch (err) {
     res.status(500).json(err);
+  }
+});
+
+app.post("/api/refresh", async (req, res) => {
+  try {
+    const body = {
+      grant_type: "refresh_token",
+      refresh_token: req.query.refresh_token,
+      client_id: process.env.CLIENT_ID,
+      client_secret: process.env.CLIENT_SECRET,
+    };
+    const tokenReq = await fetch(AUTH_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams(body),
+    });
+
+    if (!tokenReq) throw new Error("Unable to get refresh token");
+    const tokenRes = await tokenReq.json();
+    res.json(tokenRes);
+  } catch (err) {
+    console.error(err);
+    res.sendStatus(500).json(err);
   }
 });
 
@@ -105,6 +127,7 @@ app.post("/api/create", async (req, res) => {
   // User ID
   // Image in base64 format
   // Text in post
+  // Current orgs
   const userId = req.query.user_id;
   const accessToken = req.query.token;
   if (!userId || !accessToken)
@@ -113,11 +136,15 @@ app.post("/api/create", async (req, res) => {
     return res.status(400).json({ error: "Missing image data" });
   }
 
+  const authorToUse = req.query.organization_id
+    ? `urn:li:organization:${req.query.organization_id}`
+    : `urn:li:person:${userId}`;
+
   try {
     // Start of creating image for linkedIn
     const bodyData = {
       registerUploadRequest: {
-        owner: `urn:li:person:${userId}`,
+        owner: authorToUse,
         recipes: ["urn:li:digitalmediaRecipe:feedshare-image"],
         serviceRelationships: [
           {
@@ -136,6 +163,7 @@ app.post("/api/create", async (req, res) => {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
+          "X-Restli-Protocol-Version": "2.0.0",
         },
         body: JSON.stringify(bodyData),
       }
@@ -167,8 +195,14 @@ app.post("/api/create", async (req, res) => {
 
     if (!uploadImgReq.ok) throw new Error("Error uploading image");
     // End of uploading image
+    const visibilityToUse = req.query.organization_id ? "PUBLIC" : "CONTAINER";
+    // I use a container (linkedin group i started for this testing) to avoid posting to my main linkedin account, but can remove
+    const containerToUse = req.query.organization_id
+      ? undefined
+      : "urn:li:group:13019260";
     const postData = {
-      author: `urn:li:person:${userId}`,
+      author: authorToUse,
+      // There are a few post lifecycle states, but on creation only one valid is published
       lifecycleState: "PUBLISHED",
       specificContent: {
         "com.linkedin.ugc.ShareContent": {
@@ -189,9 +223,9 @@ app.post("/api/create", async (req, res) => {
           shareMediaCategory: "IMAGE",
         },
       },
-      containerEntity: "urn:li:group:13019260",
+      containerEntity: containerToUse,
       visibility: {
-        "com.linkedin.ugc.MemberNetworkVisibility": "CONTAINER",
+        "com.linkedin.ugc.MemberNetworkVisibility": visibilityToUse,
       },
     };
     const postReq = await fetch(`${API_URL}/ugcPosts`, {
@@ -206,10 +240,10 @@ app.post("/api/create", async (req, res) => {
 
     if (!postReq.ok) throw new Error("Unable to post");
     const postRes = await postReq.json();
-    res.send(200).json(postRes);
+    res.sendStatus(200).json(postRes);
   } catch (err) {
     console.log(err);
-    res.status(500).json(err);
+    res.sendStatus(500).json(err);
   }
 });
 

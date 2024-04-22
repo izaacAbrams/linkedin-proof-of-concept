@@ -26,15 +26,19 @@ export const getAccessToken = async (authToken: string) => {
     const refreshExpiresTime = new Date(
       new Date().getTime() + token.refresh_token_expires_in
     );
-    Cookies.set("linkedin-refresh-token", token.access_token, {
+    Cookies.set("linkedin-refresh-token", token.refresh_token, {
       expires: refreshExpiresTime,
     });
 
     Cookies.set("profile-data", JSON.stringify(authData.profile_data));
-    Cookies.set('organization-data', JSON.stringify(authData.organizations))
+    Cookies.set(
+      "linkedin-organization-data",
+      JSON.stringify(authData.organizations)
+    );
+
     resData = authData;
   } catch (error) {
     console.error(error);
   }
-  return resData
+  return resData;
 };

@@ -2,10 +2,14 @@ import { getAccessToken } from "./utils/getAccessToken";
 
 type IAuthProps = {
   setAuthToken: (token: string) => void;
-  setProfileData: (profile: Record<string, unknown>) => void
-  setOrgsData: (orgs: Record<string, unknown>) => void
-}
-export const Auth = ({setAuthToken, setProfileData, setOrgsData}: IAuthProps) => {
+  setProfileData: (profile: Record<string, unknown>) => void;
+  setOrgsData: (orgs: Record<string, unknown>[]) => void;
+};
+export const Auth = ({
+  setAuthToken,
+  setProfileData,
+  setOrgsData,
+}: IAuthProps) => {
   const serialize = function (obj: Record<string, string | string[]>) {
     const str = [];
     for (const p in obj)
@@ -49,14 +53,14 @@ export const Auth = ({setAuthToken, setProfileData, setOrgsData}: IAuthProps) =>
         popup &&
         popup.window.location?.href.includes("http://localhost:5173/")
       ) {
-        const paramString = popup.window.location.href.split('?')[1];
-        const queryString = new URLSearchParams(paramString)
-        const authToken = queryString.get('code')
+        const paramString = popup.window.location.href.split("?")[1];
+        const queryString = new URLSearchParams(paramString);
+        const authToken = queryString.get("code");
         if (authToken) {
-          const authData = await getAccessToken(authToken)
-          setAuthToken(authData.token.access_token)
-          setProfileData(authData.profile_data)
-          setOrgsData(authData.organizations)
+          const authData = await getAccessToken(authToken);
+          setAuthToken(authData.token.access_token);
+          setProfileData(authData.profile_data);
+          setOrgsData(authData.organizations);
         }
         popup.close();
       }
@@ -65,7 +69,5 @@ export const Auth = ({setAuthToken, setProfileData, setOrgsData}: IAuthProps) =>
     }, 1000);
   };
 
-  return (
-    <button onClick={handleAuthClick}>Log me In</button>
-  )
-}
+  return <button onClick={handleAuthClick}>Log me In</button>;
+};
