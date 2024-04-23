@@ -13,8 +13,9 @@ require("dotenv").config();
 
 app.use(cors());
 
-const API_URL = "https://api.linkedin.com/v2";
-const AUTH_URL = "https://www.linkedin.com/oauth/v2/accessToken";
+const BASE_URL = "https://api.linkedin.com";
+const API_URL = `${BASE_URL}/v2`;
+const AUTH_URL = `${BASE_URL}/oauth/v2/accessToken`;
 
 app.get("/api/auth", async (req, res) => {
   const body = {
@@ -26,8 +27,7 @@ app.get("/api/auth", async (req, res) => {
   };
 
   // In our implementation there should be two flows for posting to page/to profile to avoid having to get lists of orgs
-  const orgUrl =
-    "https://api.linkedin.com/v2/organizationalEntityAcls?q=roleAssignee&projection=(elements*(organizationalTarget~(id,localizedName,logoV2(original~:playableStreams))))";
+  const orgUrl = `${API_URL}/organizationalEntityAcls?q=roleAssignee&projection=(elements*(organizationalTarget~(id,localizedName,logoV2(original~:playableStreams))))`;
 
   try {
     const tokenRes = await fetch(AUTH_URL, {
@@ -131,39 +131,32 @@ app.post("/api/create", async (req, res) => {
   const userId = req.query.user_id;
   const accessToken = req.query.token;
   if (!userId || !accessToken)
-    res.status(500).json({ error: "Send user id and token" });
+    res.sendStatus(500).json({ error: "Send user id and token" });
   if (!req.body || !req.body.imageBinary) {
-    return res.status(400).json({ error: "Missing image data" });
+    return res.sendStatus(400).json({ error: "Missing image data" });
   }
 
   const authorToUse = req.query.organization_id
     ? `urn:li:organization:${req.query.organization_id}`
     : `urn:li:person:${userId}`;
-
+  console.log(authorToUse);
   try {
     // Start of creating image for linkedIn
     const bodyData = {
-      registerUploadRequest: {
+      initializeUploadRequest: {
         owner: authorToUse,
-        recipes: ["urn:li:digitalmediaRecipe:feedshare-image"],
-        serviceRelationships: [
-          {
-            identifier: "urn:li:userGeneratedContent",
-            relationshipType: "OWNER",
-          },
-        ],
-        supportedUploadMechanism: ["SYNCHRONOUS_UPLOAD"],
       },
     };
 
     const createImageReq = await fetch(
-      `${API_URL}/assets?action=registerUpload`,
+      `${BASE_URL}/rest/images?action=initializeUpload`,
       {
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
           "X-Restli-Protocol-Version": "2.0.0",
+          "LinkedIn-Version": "202404",
         },
         body: JSON.stringify(bodyData),
       }
@@ -172,12 +165,8 @@ app.post("/api/create", async (req, res) => {
     if (!createImageReq.ok) throw new Error("Unable to create image post");
     const createImageRes = await createImageReq.json();
     // End of creating image
-    const linkedInAsset = createImageRes.value.asset;
-    const uploadUrl =
-      createImageRes.value.uploadMechanism[
-        "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"
-      ].uploadUrl;
-
+    const linkedInAsset = createImageRes.value.image;
+    const uploadUrl = createImageRes.value.uploadUrl;
     if (!uploadUrl) throw new Error("No upload image url");
 
     // Extract image data from request body
@@ -195,55 +184,68 @@ app.post("/api/create", async (req, res) => {
 
     if (!uploadImgReq.ok) throw new Error("Error uploading image");
     // End of uploading image
-    const visibilityToUse = req.query.organization_id ? "PUBLIC" : "CONTAINER";
-    // I use a container (linkedin group i started for this testing) to avoid posting to my main linkedin account, but can remove
-    const containerToUse = req.query.organization_id
-      ? undefined
-      : "urn:li:group:13019260";
-    const postData = {
-      author: authorToUse,
-      // There are a few post lifecycle states, but on creation only one valid is published
-      lifecycleState: "PUBLISHED",
-      specificContent: {
-        "com.linkedin.ugc.ShareContent": {
-          media: [
-            {
-              media: linkedInAsset,
-              status: "READY",
-              title: {
-                attributes: [],
-                text: req.query.title,
-              },
-            },
-          ],
-          shareCommentary: {
-            attributes: [],
-            text: req.query.title,
+
+    const multiImageData = {
+      multiImage: {
+        images: [
+          {
+            id: linkedInAsset,
+            altText: req.query.title,
           },
-          shareMediaCategory: "IMAGE",
-        },
-      },
-      containerEntity: containerToUse,
-      visibility: {
-        "com.linkedin.ugc.MemberNetworkVisibility": visibilityToUse,
+          {
+            id: linkedInAsset,
+            altText: req.query.title,
+          },
+          {
+            id: linkedInAsset,
+            altText: req.query.title,
+          },
+          {
+            id: linkedInAsset,
+            altText: req.query.title,
+          },
+        ],
       },
     };
-    const postReq = await fetch(`${API_URL}/ugcPosts`, {
+    const singleImageData = {
+      media: {
+        title: "title of the video",
+        id: linkedInAsset,
+      },
+    };
+    const contentData = req.query.multi_image
+      ? multiImageData
+      : singleImageData;
+
+    const postData = {
+      author: authorToUse,
+      commentary: req.query.title,
+      visibility: "PUBLIC",
+      distribution: {
+        feedDistribution: "MAIN_FEED",
+        targetEntities: [],
+        thirdPartyDistributionChannels: [],
+      },
+      content: contentData,
+      lifecycleState: "PUBLISHED",
+      isReshareDisabledByAuthor: false,
+    };
+    const postReq = await fetch(`${BASE_URL}/rest/posts`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
+        "LinkedIn-Version": "202404",
         "X-Restli-Protocol-Version": "2.0.0",
       },
       body: JSON.stringify(postData),
     });
 
     if (!postReq.ok) throw new Error("Unable to post");
-    const postRes = await postReq.json();
-    res.sendStatus(200).json(postRes);
+    res.sendStatus(200);
   } catch (err) {
-    console.log(err);
-    res.sendStatus(500).json(err);
+    console.error(err);
+    res.sendStatus(500);
   }
 });
 

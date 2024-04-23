@@ -19,6 +19,7 @@ function App() {
   const [postMode, setPostMode] = React.useState<"personal" | "org">(
     "personal"
   );
+  const [multiImage, setMultiImage] = React.useState(false)
   const [currentOrg, setCurrentOrg] = React.useState<Record<string, unknown>>();
   const [token, setToken] = React.useState(
     Cookies.get("linkedin-access-token")
@@ -80,8 +81,9 @@ function App() {
     const createParams = generateAPIParams({
       token,
       user_id: profileData.id,
-      title: "Some custom title",
+      title: multiImage ? 'Test multi image post' : 'Test single image post',
       organization_id: currentOrg ? currentOrg.id : undefined,
+      multi_image: multiImage
     });
 
     try {
@@ -140,6 +142,10 @@ function App() {
                 Post as an Org
               </h3>
             </div>
+            <div className="org-item">
+              <input type="checkbox" checked={multiImage} onChange={e => setMultiImage(e.target.checked)} name="multi-image"></input>
+              <label htmlFor="multi-image">Multi-Image Post</label>
+            </div>
             <ProfileInfo
               profileData={profileData}
               onClick={() => setPostMode("personal")}
@@ -150,7 +156,9 @@ function App() {
                   <div
                     key={org.id as string}
                     className={`org-item profile-info ${
-                      org.name === currentOrg?.name ? "method-active" : ""
+                      postMode === "org" && org.name === currentOrg?.name
+                        ? "method-active"
+                        : ""
                     }`}
                     onClick={() => handleOrgClick(org)}
                     key={org.id}
